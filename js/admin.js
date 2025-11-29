@@ -80,3 +80,12 @@ function exportPage(manifest) {
 }
 
 loadManifest();
+
+fetch("data/pages.json")
+  .then(res => res.json())
+  .then(pages => {
+    const container = document.getElementById("pageSelector");
+    container.innerHTML = pages.map(page =>
+      `<label><input type="checkbox" value="${page.id}"> ${page.name}</label>`
+    ).join("<br>");
+  });
