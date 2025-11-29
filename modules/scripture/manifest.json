@@ -1,0 +1,11 @@
+{
+  "name": "scripture",
+  "version": "1.0.0",
+  "inputs": [
+    { "key": "reference", "type": "string", "label": "经文出处" },
+    { "key": "text", "type": "string", "label": "经文内容" }
+  ],
+  "style": "scripture.css",
+  "template": "scripture.html",
+  "script": "scripture.js"
+}
