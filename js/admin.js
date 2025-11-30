@@ -1,8 +1,10 @@
+// 加载页面与预设
 async function loadPagesAndPresets() {
   const [pagesRes, presetsRes] = await Promise.all([
     fetch("data/pages.json"),
     fetch("data/presets.json")
   ]);
+
   const pages = await pagesRes.json();
   const presets = await presetsRes.json();
 
@@ -11,50 +13,51 @@ async function loadPagesAndPresets() {
     `<label><input type="checkbox" value="${p.id}"> ${p.name}</label>`
   ).join("<br>");
 
-  document.getElementById("exportBtn").addEventListener("click", () => {
-    const selectedIds = Array.from(selector.querySelectorAll("input:checked")).map(i => i.value);
-    generatePage(selectedIds, presets);
+  // 单独绑定预览与导出
+  document.getElementById("previewBtn").addEventListener("click", async () => {
+    const selectedIds = getSelectedPageIds(selector);
+    const fullPage = await buildFullPage(selectedIds, presets);
+    previewPage(fullPage);
+  });
+
+  document.getElementById("exportBtn").addEventListener("click", async () => {
+    const selectedIds = getSelectedPageIds(selector);
+    const fullPage = await buildFullPage(selectedIds, presets);
+    downloadPage(fullPage, "generated-page.html");
   });
 }
 
-async function generatePage(pageIds, presets) {
+// 获取选中的页面 ID
+function getSelectedPageIds(selector) {
+  return Array.from(selector.querySelectorAll("input:checked")).map(i => i.value);
+}
+
+// 构建完整页面（仅负责组合 HTML 与样式）
+async function buildFullPage(pageIds, presets) {
   const allHtml = [];
   const allStyles = new Set();
 
   for (const pageId of pageIds) {
     const elementIds = presets[pageId] || [];
     for (const elementId of elementIds) {
-      const manifestRes = await fetch(`modules/${elementId}/manifest.json`);
-      const manifest = await manifestRes.json();
+      const manifest = await (await fetch(`modules/${elementId}/manifest.json`)).json();
+      const templateHtml = await (await fetch(`modules/${elementId}/${manifest.template}`)).text();
 
-      const templateRes = await fetch(`modules/${elementId}/${manifest.template}`);
-      const templateHtml = await templateRes.text();
+      // 收集数据（可以改造成表单而不是 prompt）
+      const data = collectDataForElement(elementId, manifest);
 
-      const data = {};
-      manifest.inputs.forEach(input => {
-        const val = prompt(`请输入 ${elementId} 的 ${input.label}`);
-        data[input.key] = val || "";
-      });
-
+      // 替换占位符
       let rendered = templateHtml;
       manifest.inputs.forEach(input => {
-        const key = input.key;
-        const val = data[key];
-        rendered = rendered.replaceAll(`{{${key}}}`, val);
+        rendered = rendered.replaceAll(`{{${input.key}}}`, data[input.key] || "");
       });
 
       allHtml.push(rendered);
       allStyles.add(`<link rel="stylesheet" href="modules/${elementId}/${manifest.style}">`);
     }
-  // ✅ 渲染预览区
-const previewFrame = document.getElementById("preview").contentDocument;
-previewFrame.open();
-previewFrame.write(fullPage);
-previewFrame.close();
-
   }
 
-  const fullPage = `
+  return `
     <!DOCTYPE html>
     <html lang="zh">
     <head>
@@ -67,16 +70,38 @@ previewFrame.close();
     </body>
     </html>
   `;
+}
 
-  const blob = new Blob([fullPage], { type: "text/html" });
+// 数据收集（当前用 prompt；可替换为动态表单）
+function collectDataForElement(elementId, manifest) {
+  const data = {};
+  manifest.inputs.forEach(input => {
+    const val = prompt(`请输入 ${elementId} 的 ${input.label}`) || "";
+    data[input.key] = val;
+  });
+  return data;
+}
+
+// 仅负责预览
+function previewPage(fullPageHtml) {
+  const doc = document.getElementById("preview").contentDocument;
+  doc.open();
+  doc.write(fullPageHtml);
+  doc.close();
+}
+
+// 仅负责下载
+function downloadPage(fullPageHtml, filename) {
+  const blob = new Blob([fullPageHtml], { type: "text/html" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "generated-page.html";
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
+// 初始化
 loadPagesAndPresets();
