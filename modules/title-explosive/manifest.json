@@ -2,8 +2,7 @@
   "name": "title-explosive",
   "version": "1.0.0",
   "inputs": [
-    {"key": "text", "type": "string", "label": "标题"},
-    {"key": "subtitle", "type": "string", "label": "副标题", "optional": true}
+    { "key": "text", "type": "string", "label": "主标题" }
   ],
   "style": "title-explosive.css",
   "template": "title-explosive.html",
