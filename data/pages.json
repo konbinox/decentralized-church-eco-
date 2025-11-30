@@ -1,6 +1,6 @@
 [
   { "id": "01", "name": "开始", "type": "core" },
-  { "id": "02", "name": "欢迎新朋友", "type": "core" }，
+  { "id": "02", "name": "欢迎新朋友", "type": "core" },
   { "id": "03", "name": "国王到达", "type": "core" },
   { "id": "04", "name": "改月试图", "type": "core" },
   { "id": "05", "name": "试图改进", "type": "core" },
