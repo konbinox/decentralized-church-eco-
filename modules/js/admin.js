@@ -1,37 +1,59 @@
-console.log("✅ 正在运行 modules/js/admin.js");
+console.log("✅ admin.js 已加载");
 
+// 初始化页面选择器和按钮绑定
 async function init() {
-  const [pagesRes, presetsRes] = await Promise.all([
-    fetch("data/pages.json"),
-    fetch("data/presets.json")
-  ]);
-  const pages = await pagesRes.json();
-  const presets = await presetsRes.json();
+  try {
+    const [pagesRes, presetsRes] = await Promise.all([
+      fetch("data/pages.json"),
+      fetch("data/presets.json")
+    ]);
 
-  const selector = document.getElementById("pageSelector");
-  selector.innerHTML = pages.map(p =>
-    `<label><input type="checkbox" value="${p.id}"> ${p.name}</label>`
-  ).join("");
+    const pages = await pagesRes.json();
+    const presets = await presetsRes.json();
 
-  selector.addEventListener("change", () => {
-    const selectedIds = getSelectedPageIds(selector);
-    renderForm(selectedIds, presets);
-    clearPreviewIfNone(selectedIds);
-  });
+    console.log("✅ pages.json 加载成功:", pages);
+    console.log("✅ presets.json 加载成功:", presets);
 
-  document.getElementById("previewBtn")?.addEventListener("click", async () => {
-    const html = await buildPage(presets);
-    if (html) previewPage(html);
-  });
+    const selector = document.getElementById("pageSelector");
+    selector.innerHTML = pages.map(p =>
+      `<label><input type="checkbox" value="${p.id}"> ${p.name}</label>`
+    ).join("");
 
-  document.getElementById("exportBtn")?.addEventListener("click", async () => {
-    const html = await buildPage(presets);
-    if (html) downloadPage(html, "generated-page.html");
-  });
+    selector.addEventListener("change", () => {
+      const selectedIds = getSelectedPageIds(selector);
+      renderForm(selectedIds, presets);
+      clearPreviewIfNone(selectedIds);
+    });
+
+    document.getElementById("previewBtn")?.addEventListener("click", async () => {
+      console.log("🟡 点击了预览按钮");
+      const selectedIds = getSelectedPageIds(selector);
+      if (selectedIds.length === 0) return alert("⚠️ 请至少选择一个页面");
+      const html = await buildPage(selectedIds, presets);
+      if (html) previewPage(html);
+    });
+
+    document.getElementById("exportBtn")?.addEventListener("click", async () => {
+      console.log("🟡 点击了导出按钮");
+      const selectedIds = getSelectedPageIds(selector);
+      if (selectedIds.length === 0) return alert("⚠️ 请至少选择一个页面");
+      const html = await buildPage(selectedIds, presets);
+      if (html) downloadPage(html, "generated-page.html");
+    });
+  } catch (err) {
+    console.error("❌ 初始化失败:", err);
+    alert("页面加载失败，请检查 JSON 文件路径或格式");
+  }
 }
 
 function getSelectedPageIds(container) {
   return Array.from(container.querySelectorAll("input:checked")).map(i => i.value);
+}
+
+function clearPreviewIfNone(pageIds) {
+  if (pageIds.length === 0) {
+    document.getElementById("preview").srcdoc = "";
+  }
 }
 
 async function renderForm(pageIds, presets) {
@@ -41,21 +63,23 @@ async function renderForm(pageIds, presets) {
   for (const pageId of pageIds) {
     const elementIds = presets[pageId] || [];
     for (const elementId of elementIds) {
-      const manifest = await (await fetch(`modules/${elementId}/manifest.json`)).json();
+      try {
+        const manifest = await (await fetch(`modules/${elementId}/manifest.json`)).json();
 
-      const group = document.createElement("fieldset");
-      group.innerHTML = `<legend>${elementId}</legend>` +
-        manifest.inputs.map(input =>
-          `<label>${input.label}: <input name="${elementId}__${input.key}" type="text"></label>`
-        ).join("");
-      formArea.appendChild(group);
+        const group = document.createElement("fieldset");
+        group.innerHTML = `<legend>${elementId}</legend>` +
+          manifest.inputs.map(input =>
+            `<label>${input.label}: <input name="${elementId}__${input.key}" type="text"></label>`
+          ).join("");
+        formArea.appendChild(group);
+      } catch (err) {
+        console.warn(`⚠️ 模块 ${elementId} 加载失败`, err);
+        const errorBox = document.createElement("div");
+        errorBox.textContent = `⚠️ 模块 ${elementId} 加载失败`;
+        errorBox.style.color = "red";
+        formArea.appendChild(errorBox);
+      }
     }
-  }
-}
-
-function clearPreviewIfNone(pageIds) {
-  if (pageIds.length === 0) {
-    document.getElementById("preview").srcdoc = "";
   }
 }
 
@@ -68,7 +92,8 @@ function collectData(elementId, manifest) {
   return data;
 }
 
-async function buildFullPage(pageIds, presets) {
+async function buildPage(pageIds, presets) {
+  console.log("🟢 开始构建页面，页面ID:", pageIds);
   const allHtml = [];
   const allStyles = new Set();
 
@@ -79,29 +104,19 @@ async function buildFullPage(pageIds, presets) {
         const manifest = await (await fetch(`modules/${elementId}/manifest.json`)).json();
         let template = await (await fetch(`modules/${elementId}/${manifest.template}`)).text();
 
-        // 收集字段数据
-        const data = {};
-        manifest.inputs.forEach(input => {
-          const el = document.querySelector(`input[name="${elementId}__${input.key}"]`);
-          data[input.key] = el ? el.value : "";
-        });
-
-        // 替换模板中的 {{key}}
+        const data = collectData(elementId, manifest);
         manifest.inputs.forEach(input => {
           const re = new RegExp(`\\{\\{\\s*${input.key}\\s*\\}\\}`, "g");
           template = template.replace(re, data[input.key] || "");
         });
 
-        // 加样式
         allStyles.add(`<link rel="stylesheet" href="modules/${elementId}/${manifest.style}">`);
-
-        // 提取 <template> 内容
         const m = template.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
         const clean = m ? m[1] : template;
 
         allHtml.push(`<div class="module">${clean}</div>`);
-      } catch (e) {
-        console.warn(`⚠️ 跳过模块 ${elementId}：加载失败`, e);
+      } catch (err) {
+        console.warn(`⚠️ 跳过模块 ${elementId}：加载失败`, err);
       }
     }
   }
@@ -111,7 +126,6 @@ async function buildFullPage(pageIds, presets) {
     return "";
   }
 
-  // Assemble final HTML
   const fullPage = `
     <!DOCTYPE html>
     <html lang="zh">
@@ -127,17 +141,13 @@ async function buildFullPage(pageIds, presets) {
     </html>
   `.trim();
 
+  console.log("✅ 页面构建完成，模块数:", allHtml.length);
   return fullPage;
-}
-
-function stripTemplate(html) {
-  const m = html.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
-  return m ? m[1] : html;
 }
 
 function previewPage(html) {
   const doc = document.getElementById("preview").contentDocument;
-  doc.open(); doc.write(html); doc.close();
+  doc.open(); doc.write(html || "<p style='color:red;'>⚠️ 无内容可预览</p>"); doc.close();
 }
 
 function downloadPage(html, filename) {
