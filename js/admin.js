@@ -1,63 +1,134 @@
-// 加载页面与预设
-async function loadPagesAndPresets() {
-  const [pagesRes, presetsRes] = await Promise.all([
-    fetch("data/pages.json"),
-    fetch("data/presets.json")
-  ]);
-
-  const pages = await pagesRes.json();
-  const presets = await presetsRes.json();
-
-  const selector = document.getElementById("pageSelector");
-  selector.innerHTML = pages.map(p =>
-    `<label><input type="checkbox" value="${p.id}"> ${p.name}</label>`
-  ).join("<br>");
-
-  // 单独绑定预览与导出
-  document.getElementById("previewBtn").addEventListener("click", async () => {
-    const selectedIds = getSelectedPageIds(selector);
-    const fullPage = await buildFullPage(selectedIds, presets);
-    previewPage(fullPage);
-  });
-
-  document.getElementById("exportBtn").addEventListener("click", async () => {
-    const selectedIds = getSelectedPageIds(selector);
-    const fullPage = await buildFullPage(selectedIds, presets);
-    downloadPage(fullPage, "generated-page.html");
-  });
+// --- Utilities ---
+function logError(msg, detail) {
+  const el = document.getElementById("log");
+  el.textContent = `[错误] ${msg}${detail ? `\n详情: ${detail}` : ""}`;
+  console.error(msg, detail || "");
 }
-
-// 获取选中的页面 ID
+function clearLog() {
+  const el = document.getElementById("log");
+  el.textContent = "";
+}
 function getSelectedPageIds(selector) {
   return Array.from(selector.querySelectorAll("input:checked")).map(i => i.value);
 }
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
 
-// 构建完整页面（仅负责组合 HTML 与样式）
+// --- Load pages and presets, bind actions ---
+async function loadPagesAndPresets() {
+  clearLog();
+  let pages, presets;
+
+  try {
+    const [pagesRes, presetsRes] = await Promise.all([
+      fetch("data/pages.json"),
+      fetch("data/presets.json")
+    ]);
+
+    assert(pagesRes.ok, "无法加载 data/pages.json");
+    assert(presetsRes.ok, "无法加载 data/presets.json");
+
+    pages = await pagesRes.json();
+    presets = await presetsRes.json();
+
+    assert(Array.isArray(pages), "pages.json 格式应为数组");
+    assert(typeof presets === "object" && presets, "presets.json 格式应为对象映射");
+  } catch (e) {
+    return logError("初始化失败：请检查 pages/presets 路径和 JSON 格式", e.message);
+  }
+
+  // Render page selector
+  const selector = document.getElementById("pageSelector");
+  selector.innerHTML = pages.map(p =>
+    `<label><input type="checkbox" value="${p.id}"> ${p.name}</label>`
+  ).join("");
+
+  // Bind actions
+  document.getElementById("previewBtn").addEventListener("click", async () => {
+    clearLog();
+    const selectedIds = getSelectedPageIds(selector);
+    if (selectedIds.length === 0) return logError("请至少选择一个页面");
+    const fullPage = await buildFullPage(selectedIds, presets);
+    if (fullPage) previewPage(fullPage);
+  });
+
+  document.getElementById("exportBtn").addEventListener("click", async () => {
+    clearLog();
+    const selectedIds = getSelectedPageIds(selector);
+    if (selectedIds.length === 0) return logError("请至少选择一个页面");
+    const fullPage = await buildFullPage(selectedIds, presets);
+    if (fullPage) downloadPage(fullPage, "generated-page.html");
+  });
+}
+
+// --- Build full page from selected pages + presets ---
 async function buildFullPage(pageIds, presets) {
   const allHtml = [];
   const allStyles = new Set();
 
-  for (const pageId of pageIds) {
-    const elementIds = presets[pageId] || [];
-    for (const elementId of elementIds) {
-      const manifest = await (await fetch(`modules/${elementId}/manifest.json`)).json();
-      const templateHtml = await (await fetch(`modules/${elementId}/${manifest.template}`)).text();
+  try {
+    for (const pageId of pageIds) {
+      const elementIds = presets[pageId] || [];
+      if (!Array.isArray(elementIds) || elementIds.length === 0) {
+        logError(`页面 ${pageId} 未在 presets 中配置元素或为空`);
+        continue;
+      }
 
-      // 收集数据（可以改造成表单而不是 prompt）
-      const data = collectDataForElement(elementId, manifest);
+      for (const elementId of elementIds) {
+        // Load manifest
+        const manifestUrl = `modules/${elementId}/manifest.json`;
+        const manifestRes = await fetch(manifestUrl);
+        if (!manifestRes.ok) throw new Error(`无法加载 ${manifestUrl}`);
+        const manifest = await manifestRes.json();
 
-      // 替换占位符
-      let rendered = templateHtml;
-      manifest.inputs.forEach(input => {
-        rendered = rendered.replaceAll(`{{${input.key}}}`, data[input.key] || "");
-      });
+        // Validate manifest
+        assert(manifest && typeof manifest === "object", `manifest(${elementId}) 格式错误`);
+        assert(typeof manifest.template === "string", `manifest(${elementId}) 缺少 template`);
+        assert(typeof manifest.style === "string", `manifest(${elementId}) 缺少 style`);
+        assert(Array.isArray(manifest.inputs), `manifest(${elementId}) inputs 必须是数组`);
 
-      allHtml.push(rendered);
-      allStyles.add(`<link rel="stylesheet" href="modules/${elementId}/${manifest.style}">`);
+        // Load template
+        const templateUrl = `modules/${elementId}/${manifest.template}`;
+        const templateRes = await fetch(templateUrl);
+        if (!templateRes.ok) throw new Error(`无法加载模板 ${templateUrl}`);
+        let templateHtml = await templateRes.text();
+
+        // Collect data via prompt (kept for parity; can be replaced with dynamic forms)
+        const data = {};
+        for (const input of manifest.inputs) {
+          if (!input || typeof input.key !== "string") {
+            throw new Error(`manifest(${elementId}) inputs 项缺少 key`);
+          }
+          const val = prompt(`请输入 ${elementId} 的 ${input.label || input.key}`) || "";
+          data[input.key] = val;
+        }
+
+        // Replace placeholders consistently ({{key}}) – replaceAll with regex for multiple occurrences
+        let rendered = templateHtml;
+        for (const input of manifest.inputs) {
+          const key = input.key;
+          const value = data[key] || "";
+          const re = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g");
+          rendered = rendered.replace(re, value);
+        }
+
+        // Track styles
+        allStyles.add(`<link rel="stylesheet" href="modules/${elementId}/${manifest.style}">`);
+
+        // If the template contains <template id="...">, we can strip it or keep innerHTML
+        rendered = stripTemplateWrapper(rendered);
+
+        allHtml.push(rendered);
+      }
     }
+  } catch (e) {
+    logError("构建页面失败：请检查元素包路径、manifest、模板占位符", e.message);
+    return null;
   }
 
-  return `
+  // Assemble final HTML
+  const fullPage = `
     <!DOCTYPE html>
     <html lang="zh">
     <head>
@@ -69,20 +140,24 @@ async function buildFullPage(pageIds, presets) {
       ${allHtml.join("\n")}
     </body>
     </html>
-  `;
+  `.trim();
+
+  if (allHtml.length === 0) {
+    logError("未产生任何元素内容：请确认所选页面的 presets 与模块存在");
+    return null;
+  }
+
+  return fullPage;
 }
 
-// 数据收集（当前用 prompt；可替换为动态表单）
-function collectDataForElement(elementId, manifest) {
-  const data = {};
-  manifest.inputs.forEach(input => {
-    const val = prompt(`请输入 ${elementId} 的 ${input.label}`) || "";
-    data[input.key] = val;
-  });
-  return data;
+// --- Helpers ---
+function stripTemplateWrapper(html) {
+  // If the module uses <template id="...">...</template>, extract inner content
+  const m = html.match(/<template[^>]*>([\s\S]*?)<\/template>/i);
+  return m ? m[1] : html;
 }
 
-// 仅负责预览
+// --- Preview ---
 function previewPage(fullPageHtml) {
   const doc = document.getElementById("preview").contentDocument;
   doc.open();
@@ -90,7 +165,7 @@ function previewPage(fullPageHtml) {
   doc.close();
 }
 
-// 仅负责下载
+// --- Download ---
 function downloadPage(fullPageHtml, filename) {
   const blob = new Blob([fullPageHtml], { type: "text/html" });
   const url = URL.createObjectURL(blob);
@@ -103,5 +178,5 @@ function downloadPage(fullPageHtml, filename) {
   URL.revokeObjectURL(url);
 }
 
-// 初始化
+// --- Init ---
 loadPagesAndPresets();
