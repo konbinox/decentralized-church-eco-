@@ -1,0 +1,9 @@
+{
+  "fields": [
+    {
+      "name": "02",
+      "type": "text"
+    }
+  ],
+  "template": "02.html"
+}
