@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-.title-explosive {
-  margin: 1rem;
-  padding: 1rem;
-  border: 1px solid #ccc;
-  text-align: center;
-}
-=======
 .explosive {
   font-size: 3rem;
   text-align: center;
@@ -13,4 +5,4 @@
   font-weight: bold;
   margin-top: 2rem;
 }
->>>>>>> 4a68468905ce0622c2dfd4d057aa1a140c1b4ef2
+
