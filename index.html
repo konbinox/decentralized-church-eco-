@@ -11,12 +11,7 @@
   <!-- 页面选择器 -->
   <div id="pageSelector">
     <form id="pageForm">
-      <label><input type="checkbox" value="title-welcome"> 欢迎新朋友</label><br>
-      <label><input type="checkbox" value="title-king-arrival"> 国王到达</label><br>
-      <label><input type="checkbox" value="scripture"> 经文模块</label><br>
-      <label><input type="checkbox" value="music-player"> 音乐播放器</label><br>
-      <label><input type="checkbox" value="qr-code"> 二维码</label><br>
-      <!-- 你可以继续加其它模块 -->
+      <!-- 这里的选择器会由 admin.js 动态生成 -->
     </form>
   </div>
 
@@ -26,8 +21,11 @@
     <button id="exportPage">导出页面</button>
   </div>
 
-  <!-- 不再使用 iframe 预览 -->
+  <!-- 不再使用 iframe -->
   <!-- <iframe id="previewFrame"></iframe> -->
+
+  <!-- 预览区域（可选，用于显示表单字段） -->
+  <div id="formArea"></div>
 
   <script type="module" src="admin.js"></script>
 </body>
