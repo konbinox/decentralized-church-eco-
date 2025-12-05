@@ -139,7 +139,7 @@ async function buildFullPage(pageIds, presets) {
     </html>
   `.trim();
 }
-
+/*
 // --- Preview ---
 function previewPage(fullPageHtml) {
   const iframe = document.getElementById("preview");
@@ -156,7 +156,7 @@ function previewPage(fullPageHtml) {
   doc.write(fullPageHtml);
   doc.close();
 }
-
+*/
 // --- Download ---
 function downloadPage(fullPageHtml, filename) {
   const blob = new Blob([fullPageHtml], { type: "text/html" });
