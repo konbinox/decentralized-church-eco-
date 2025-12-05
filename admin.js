@@ -44,11 +44,16 @@ async function loadPagesAndPresets() {
     `<label><input type="checkbox" value="${p.id}"> ${p.name}</label>`
   ).join("");
 
+  // 每次选择变化时渲染动态表单
+  selector.addEventListener("change", () => {
+    const selectedIds = getSelectedPageIds(selector);
+    renderForm(selectedIds, presets);
+  });
+
   // Bind actions
   document.getElementById("previewBtn").addEventListener("click", async () => {
     clearLog();
     const selectedIds = getSelectedPageIds(selector);
-    if (selectedIds.length === 0) return logError("请至少选择一个页面");
     const fullPage = await buildFullPage(selectedIds, presets);
     if (fullPage) previewPage(fullPage);
   });
@@ -56,7 +61,6 @@ async function loadPagesAndPresets() {
   document.getElementById("exportBtn").addEventListener("click", async () => {
     clearLog();
     const selectedIds = getSelectedPageIds(selector);
-    if (selectedIds.length === 0) return logError("请至少选择一个页面");
     const fullPage = await buildFullPage(selectedIds, presets);
     if (fullPage) downloadPage(fullPage, "generated-page.html");
   });
@@ -64,6 +68,11 @@ async function loadPagesAndPresets() {
 
 // --- Build full page from selected pages + presets ---
 async function buildFullPage(pageIds, presets) {
+  if (!pageIds || pageIds.length === 0) {
+    logError("未选择任何页面，无法生成预览");
+    return null;
+  }
+
   const allHtml = [];
   const allStyles = new Set();
 
@@ -109,8 +118,13 @@ async function buildFullPage(pageIds, presets) {
     return null;
   }
 
+  if (allHtml.length === 0) {
+    logError("未产生任何元素内容：请确认所选页面的 presets 与模块存在");
+    return null;
+  }
+
   // Assemble final HTML
-  const fullPage = `
+  return `
     <!DOCTYPE html>
     <html lang="zh">
     <head>
@@ -123,19 +137,20 @@ async function buildFullPage(pageIds, presets) {
     </body>
     </html>
   `.trim();
-
-  if (allHtml.length === 0) {
-    logError("未产生任何元素内容：请确认所选页面的 presets 与模块存在");
-    return null;
-  }
-
-  return fullPage;
 }
 
 // --- Preview ---
 function previewPage(fullPageHtml) {
   const iframe = document.getElementById("preview");
   const doc = iframe.contentDocument || iframe.contentWindow.document;
+
+  if (!fullPageHtml || typeof fullPageHtml !== "string") {
+    doc.open();
+    doc.write("<p style='color:#c0392b;margin:12px 8px'>请先选择页面再预览</p>");
+    doc.close();
+    return;
+  }
+
   doc.open();
   doc.write(fullPageHtml);
   doc.close();
