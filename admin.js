@@ -77,55 +77,61 @@ async function buildFullPage(pageIds, presets) {
   const allHtml = [];
   const allStyles = new Set();
 
-  try {
-    for (const pageId of pageIds) {
-      const elementIds = presets[pageId] || [];
-      if (!Array.isArray(elementIds) || elementIds.length === 0) {
-        logError(`页面 ${pageId} 未在 presets 中配置元素或为空`);
-        continue;
-      }
+  for (const pageId of pageIds) {
+    const elementIds = presets[pageId];
+    if (!Array.isArray(elementIds) || elementIds.length === 0) {
+      logError(`页面 ${pageId} 未配置元素`);
+      continue;
+    }
 
-      for (const elementId of elementIds) {
-        // Load manifest
-        const manifestUrl = `modules/${elementId}/manifest.json`;
+    for (const elementId of elementIds) {
+      try {
+        // Step 1: Load manifest
+        const manifestUrl = `./modules/${elementId}/manifest.json`;
         const manifestRes = await fetch(manifestUrl);
-        if (!manifestRes.ok) throw new Error(`无法加载 ${manifestUrl}`);
+        if (!manifestRes.ok) throw new Error(`加载失败: ${manifestUrl}`);
         const manifest = await manifestRes.json();
 
-        // Validate manifest
-        assert(manifest && typeof manifest === "object", `manifest(${elementId}) 格式错误`);
-        assert(typeof manifest.style === "string", `manifest(${elementId}) 缺少 style`);
-        assert(Array.isArray(manifest.inputs), `manifest(${elementId}) inputs 必须是数组`);
+        if (!manifest || typeof manifest !== "object") throw new Error(`manifest(${elementId}) 格式错误`);
+        if (!manifest.script || !manifest.style || !Array.isArray(manifest.inputs)) {
+          throw new Error(`manifest(${elementId}) 缺少必要字段`);
+        }
 
-        // Collect data via dynamic form
+        // Step 2: Collect form data
         const data = {};
         for (const input of manifest.inputs) {
           const el = document.querySelector(`[name="${elementId}-${input.key}"]`);
           data[input.key] = el ? el.value : "";
         }
 
-        // Load module script dynamically
-        const moduleScript = await import(`./modules/${elementId}/${manifest.script}`);
+        // Step 3: Load module and render
+        const modulePath = `./modules/${elementId}/${manifest.script}`;
+        const moduleScript = await import(modulePath);
+        if (typeof moduleScript.default !== "function") {
+          throw new Error(`模块 ${elementId} 未导出默认函数`);
+        }
+
         const rendered = moduleScript.default(data);
+        if (!rendered || typeof rendered !== "string") {
+          throw new Error(`模块 ${elementId} 渲染失败`);
+        }
 
-        // Track styles
-        allStyles.add(`<link rel="stylesheet" href="modules/${elementId}/${manifest.style}">`);
-
+        allStyles.add(`<link rel="stylesheet" href="./modules/${elementId}/${manifest.style}">`);
         allHtml.push(rendered);
+
+      } catch (e) {
+        logError(`元素 ${elementId} 构建失败`, e.message);
       }
     }
-  } catch (e) {
-    logError("构建页面失败：请检查元素包路径、manifest、模板占位符", e.message);
-    return null;
   }
 
   if (allHtml.length === 0) {
-    logError("未产生任何元素内容：请确认所选页面的 presets 与模块存在");
+    logError("未产生任何元素内容：请确认 presets 与模块是否存在");
     return null;
   }
 
   // Assemble final HTML
-  return `
+  const fullPageHtml = `
     <!DOCTYPE html>
     <html lang="zh">
     <head>
@@ -138,6 +144,9 @@ async function buildFullPage(pageIds, presets) {
     </body>
     </html>
   `.trim();
+
+  console.log("✅ 构建完成:", fullPageHtml);
+  return fullPageHtml;
 }
 /*
 // --- Preview ---
